@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Accessible Calendar App</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #f4f4f4;
+    }
+    .header {
+      width: 100%;
+      height: 60px;
+      background: #222;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      position: relative;
+    }
+    .login-btn {
+      margin-right: 24px;
+      padding: 10px 24px;
+      font-size: 1rem;
+      border: none;
+      background: #0078d7;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .login-btn:focus,
+    .login-btn:hover {
+      background: #005a9e;
+      outline: 2px solid #fff;
+    }
+    .main-content {
+      max-width: 500px;
+      margin: 40px auto;
+      background: #fff;
+      padding: 24px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .calendar-controls {
+      margin-bottom: 1em;
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+      flex-wrap: wrap;
+    }
+    .calendar-controls label {
+      font-weight: bold;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      max-width: 400px;
+    }
+    th, td {
+      border: 1px solid #444;
+      padding: 0.5em;
+      text-align: center;
+    }
+    th {
+      background: #eee;
+    }
+    .today {
+      background: #bde5ff;
+    }
+    button.day-btn {
+      width: 2em;
+      height: 2em;
+      border: none;
+      background: none;
+      font: inherit;
+      cursor: pointer;
+    }
+    button.day-btn:focus {
+      outline: 2px solid #0078D7;
+      background: #e6f7ff;
+    }
+    td:empty {
+      background: #f7f7f7;
+    }
+    .visually-hidden {
+      position: absolute !important;
+      height: 1px; width: 1px;
+      overflow: hidden;
+      clip: rect(1px, 1px, 1px, 1px);
+      white-space: nowrap;
+    }
+    @media (max-width: 600px) {
+      .main-content {
+        margin: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <button class="login-btn" id="loginBtn" aria-label="Login">Login</button>
+  </div>
+  <div class="main-content">
+    <h1 id="calendar-heading">Accessible Calendar</h1>
+    <div class="calendar-controls" aria-label="Change month and year">
+      <button id="prev-year" aria-label="Previous year">&laquo; Year</button>
+      <button id="prev-month" aria-label="Previous month">&lsaquo; Month</button>
+
+      <label for="month-select" class="visually-hidden">Month</label>
+      <select id="month-select" aria-label="Select month">
+        <option value="0">January</option>
+        <option value="1">February</option>
+        <option value="2">March</option>
+        <option value="3">April</option>
+        <option value="4">May</option>
+        <option value="5">June</option>
+        <option value="6">July</option>
+        <option value="7">August</option>
+        <option value="8">September</option>
+        <option value="9">October</option>
+        <option value="10">November</option>
+        <option value="11">December</option>
+      </select>
+
+      <label for="year-select" class="visually-hidden">Year</label>
+      <select id="year-select" aria-label="Select year">
+        <!-- Years will be populated by JS -->
+      </select>
+
+      <button id="next-month" aria-label="Next month">Month &rsaquo;</button>
+      <button id="next-year" aria-label="Next year">Year &raquo;</button>
+    </div>
+    <div id="calendar-container"></div>
+    <p>
+      Use your screen reader's table navigation commands to explore the dates.<br>
+      Each day is clickable and accessible by keyboard. Use the controls to change the month and year.
+    </p>
+  </div>
+  <script>
+    // Login button logic
+    document.getElementById('loginBtn').addEventListener('click', function() {
+      // Replace with your login logic
+      alert('Login clicked!');
+    });
+
+    // Calendar rendering with swiping (month/year change) support
+    const calendarContainer = document.getElementById('calendar-container');
+    const monthSelect = document.getElementById('month-select');
+    const yearSelect = document.getElementById('year-select');
+    const prevMonthBtn = document.getElementById('prev-month');
+    const nextMonthBtn = document.getElementById('next-month');
+    const prevYearBtn = document.getElementById('prev-year');
+    const nextYearBtn = document.getElementById('next-year');
+    const calendarHeading = document.getElementById('calendar-heading');
+
+    // Set year range
+    const thisYear = new Date().getFullYear();
+    const yearMin = thisYear - 20;
+    const yearMax = thisYear + 20;
+    for (let y = yearMin; y <= yearMax; y++) {
+      const opt = document.createElement('option');
+      opt.value = y;
+      opt.textContent = y;
+      if (y === thisYear) opt.selected = true;
+      yearSelect.appendChild(opt);
+    }
+
+    // Initial month/year
+    let currentMonth = new Date().getMonth();
+    let currentYear = thisYear;
+
+    function renderCalendar(month, year) {
+      // Set selects
+      monthSelect.value = month;
+      yearSelect.value = year;
+
+      // Update heading
+      calendarHeading.textContent = `${monthSelect.options[month].text} ${year} Calendar`;
+
+      // Table header
+      let table = `<table aria-label="Monthly calendar for ${monthSelect.options[month].text} ${year}">
+        <thead>
+          <tr>
+            <th scope="col">Sun</th>
+            <th scope="col">Mon</th>
+            <th scope="col">Tue</th>
+            <th scope="col">Wed</th>
+            <th scope="col">Thu</th>
+            <th scope="col">Fri</th>
+            <th scope="col">Sat</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      // Dates logic
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const today = new Date();
+      let day = 1;
+      for (let i = 0; i < 6; i++) { // max 6 weeks in a month
+        table += '<tr>';
+        for (let j = 0; j < 7; j++) {
+          if ((i === 0 && j < firstDay) || day > daysInMonth) {
+            table += `<td></td>`;
+          } else {
+            let isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+            table += `<td${isToday ? ' class="today"' : ''}>` +
+              `<button class="day-btn" aria-label="${monthSelect.options[month].text} ${day}, ${year}"` +
+              (isToday ? ' aria-current="date"' : '') +
+              `>${day}</button></td>`;
+            day++;
+          }
+        }
+        table += '</tr>';
+        if (day > daysInMonth) break;
+      }
+      table += '</tbody></table>';
+      calendarContainer.innerHTML = table;
+
+      // Add click handlers to day buttons
+      document.querySelectorAll('.day-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          alert('You clicked on ' + btn.getAttribute('aria-label'));
+        });
+      });
+    }
+
+    // Event listeners for controls
+    monthSelect.addEventListener('change', function() {
+      currentMonth = parseInt(this.value, 10);
+      renderCalendar(currentMonth, currentYear);
+    });
+
+    yearSelect.addEventListener('change', function() {
+      currentYear = parseInt(this.value, 10);
+      renderCalendar(currentMonth, currentYear);
+    });
+
+    prevMonthBtn.addEventListener('click', function() {
+      if (currentMonth === 0) {
+        if (currentYear > yearMin) {
+          currentMonth = 11;
+          currentYear--;
+        }
+      } else {
+        currentMonth--;
+      }
+      renderCalendar(currentMonth, currentYear);
+    });
+
+    nextMonthBtn.addEventListener('click', function() {
+      if (currentMonth === 11) {
+        if (currentYear < yearMax) {
+          currentMonth = 0;
+          currentYear++;
+        }
+      } else {
+        currentMonth++;
+      }
+      renderCalendar(currentMonth, currentYear);
+    });
+
+    prevYearBtn.addEventListener('click', function() {
+      if (currentYear > yearMin) {
+        currentYear--;
+        renderCalendar(currentMonth, currentYear);
+      }
+    });
+
+    nextYearBtn.addEventListener('click', function() {
+      if (currentYear < yearMax) {
+        currentYear++;
+        renderCalendar(currentMonth, currentYear);
+      }
+    });
+
+    // Keyboard support for month/year navigation (left/right/up/down arrows)
+    calendarContainer.addEventListener('keydown', function(e) {
+      if (e.target.classList.contains('day-btn')) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          prevMonthBtn.focus();
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          nextMonthBtn.focus();
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          prevYearBtn.focus();
+        }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          nextYearBtn.focus();
+        }
+      }
+    });
+
+    // Initial render
+    renderCalendar(currentMonth, currentYear);
+
+    // Optional: basic swipe (touch) support for mobile users
+    let touchStartX = null;
+    calendarContainer.addEventListener('touchstart', function(e) {
+      if (e.touches.length === 1) touchStartX = e.touches[0].clientX;
+    });
+    calendarContainer.addEventListener('touchend', function(e) {
+      if (touchStartX === null) return;
+      let touchEndX = e.changedTouches[0].clientX;
+      let dx = touchEndX - touchStartX;
+      if (Math.abs(dx) > 40) { // Threshold for swipe
+        if (dx > 0) { // Swipe right: previous month
+          prevMonthBtn.click();
+        } else { // Swipe left: next month
+          nextMonthBtn.click();
+        }
+      }
+      touchStartX = null;
+    });
+  </script>
+</body>
+</html>
