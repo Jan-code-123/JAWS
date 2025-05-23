@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Accessible Calendar App</title>
+  <link rel="stylesheet" href="accessible-calendar-app_Version2.css">
+  <style>
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0; top: 0; width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.4);
+      justify-content: center;
+      align-items: center;
+    }
+    .modal.open {
+      display: flex;
+    }
+    .modal-content {
+      position: relative;
+      background: #fff;
+      padding: 2em 2em 1.5em 2em;
+      border-radius: 10px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.25);
+      width: 90vw;
+      max-width: 390px;
+      min-width: 260px;
+      min-height: 0;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .modal-close-btn {
+      position: absolute;
+      top: 0.7em;
+      right: 0.7em;
+      font-size: 1.5em;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #333;
+    }
+    .modal-alert-warning {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+      border-radius: 5px;
+      padding: 0.75em 1em;
+      margin-top: 1em;
+      margin-bottom: 1em;
+      font-size: 1em;
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+      font-weight: bold;
+    }
+    .modal-alert-warning svg {
+      flex-shrink: 0;
+      margin-right: 0.5em;
+    }
+    @media (max-width: 520px) {
+      .modal-content {
+        width: 97vw;
+        max-width: 98vw;
+        padding: 1.2em 0.7em 1em 0.7em;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <button class="logout-btn" id="logoutBtn" aria-label="Logout">Logout</button>
+  </div>
+  <div class="main-content">
+    <h1 id="calendar-heading" aria-live="polite">Accessible Calendar</h1>
+    <div class="calendar-controls" aria-label="Change month and year">
+      <button id="prev-year" aria-label="Previous year">&laquo; Year</button>
+      <button id="prev-month" aria-label="Previous month">&lsaquo; Month</button>
+      <label for="month-select" class="visually-hidden">Month</label>
+      <select id="month-select" aria-label="Select month">
+        <option value="0">January</option>
+        <option value="1">February</option>
+        <option value="2">March</option>
+        <option value="3">April</option>
+        <option value="4">May</option>
+        <option value="5">June</option>
+        <option value="6">July</option>
+        <option value="7">August</option>
+        <option value="8">September</option>
+        <option value="9">October</option>
+        <option value="10">November</option>
+        <option value="11">December</option>
+      </select>
+      <label for="year-select" class="visually-hidden">Year</label>
+      <select id="year-select" aria-label="Select year"></select>
+      <button id="next-month" aria-label="Next month">Month &rsaquo;</button>
+      <button id="next-year" aria-label="Next year">Year &raquo;</button>
+    </div>
+    <div id="calendar-container"></div>
+    <p>
+      Use your screen reader's table navigation commands to explore the dates.<br>
+      To enter a report book or actual hours worked for a week, click the pencil icon at the end of each week ending on a Sunday.<br>
+      Use the controls to change the month and year.
+    </p>
+  </div>
+  <!-- Modal for week report and hours worked -->
+  <div class="modal" id="weekModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalDesc">
+    <div class="modal-content">
+      <!-- Close button in the top right -->
+      <button class="modal-close-btn" id="closeModalBtn" aria-label="Close window">&times;</button>
+      <h2 id="modalTitle"></h2>
+      <div id="modalDesc">
+        <label for="weekReportInput" class="modal-label">Report Book for this week:</label>
+        <textarea id="weekReportInput" class="modal-textarea" aria-label="Report book for this week"></textarea>
+        <fieldset style="margin-top:1em;">
+          <legend><strong>Hours worked for each day (Mon-Fri and not on BW holidays, max 10 hours):</strong></legend>
+          <div id="hoursInputs"></div>
+        </fieldset>
+        <div id="weekAlertWarning" class="modal-alert-warning" style="display:none;" role="alert" aria-live="assertive">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="#856404" aria-hidden="true" focusable="false" style="vertical-align:middle;">
+            <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+          </svg>
+          Warning: The overall workload exceeds 40 hours for this week!
+        </div>
+        <button id="saveReportBtn" class="modal-save-btn">Save</button>
+        <p id="modalSavedMsg" class="modal-saved-msg" style="display:none;" role="status">Saved!</p>
+      </div>
+    </div>
+  </div>
+  <script src="holidays-bw.js"></script>
+  <script>
+    document.getElementById('logoutBtn').addEventListener('click', function() {
+      alert('Logout clicked!');
+    });
+
+    const modal = document.getElementById('weekModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const reportInput = document.getElementById('weekReportInput');
+    const saveReportBtn = document.getElementById('saveReportBtn');
+    const savedMsg = document.getElementById('modalSavedMsg');
+    const hoursInputsDiv = document.getElementById('hoursInputs');
+    const weekAlertWarning = document.getElementById('weekAlertWarning');
+    let lastFocusedElement = null;
+    let currentWeekKey = null;
+    let currentWeekDays = [];
+
+    function getReports() {
+      try {
+        return JSON.parse(localStorage.getItem('calendarWeekReports') || '{}');
+      } catch {
+        return {};
+      }
+    }
+    function setReports(reports) {
+      localStorage.setItem('calendarWeekReports', JSON.stringify(reports));
+    }
+    function saveReport(key, text, hoursWorked) {
+      const reports = getReports();
+      reports[key] = {
+        report: text,
+        hours: hoursWorked
+      };
+      setReports(reports);
+    }
+    function getReport(key) {
+      const reports = getReports();
+      return reports[key] || { report: '', hours: {} };
+    }
+
+    function renderHoursInputs(weekDaysArr, savedHours) {
+      hoursInputsDiv.innerHTML = '';
+      const holidays = getBWHolidays(
+        weekDaysArr.find(d => d)?.getFullYear() || (new Date()).getFullYear()
+      );
+      weekDaysArr.forEach(dateObj => {
+        if (!dateObj) {
+          hoursInputsDiv.appendChild(document.createElement('div'));
+          return;
+        }
+        const weekday = dateObj.getDay(); // 0=Sun, 6=Sat
+        const dayStr = dateObj.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        const dateKey = dateObj.toISOString().slice(0, 10);
+
+        const isHoliday = holidays.includes(dateKey);
+
+        const wrapper = document.createElement('div');
+        wrapper.style.marginBottom = '0.5em';
+
+        if (weekday === 0 || weekday === 6 || isHoliday) {
+          const label = document.createElement('label');
+          label.style.color = "#888";
+          label.textContent = dayStr + ': ';
+          wrapper.appendChild(label);
+          if (isHoliday) {
+            wrapper.appendChild(document.createTextNode('No entry (BW holiday)'));
+          } else {
+            wrapper.appendChild(document.createTextNode('No entry (weekend)'));
+          }
+        } else {
+          const label = document.createElement('label');
+          label.setAttribute('for', 'hours-' + dateKey);
+          label.textContent = dayStr + ': ';
+
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.id = 'hours-' + dateKey;
+          input.setAttribute('aria-label', 'Hours worked for ' + dayStr);
+          input.min = 0;
+          input.max = 10;
+          input.step = 0.25;
+          input.value = (savedHours && savedHours[dateKey] !== undefined) ? savedHours[dateKey] : '';
+          input.style.width = '4em';
+          input.style.marginRight = '0.5em';
+
+          input.addEventListener('input', function() {
+            if (input.value !== "" && (parseFloat(input.value) < 0 || parseFloat(input.value) > 10)) {
+              input.setCustomValidity("Please enter a value between 0 and 10.");
+            } else {
+              input.setCustomValidity("");
+            }
+            updateWeekWorkloadWarning();
+          });
+
+          wrapper.appendChild(label);
+          wrapper.appendChild(input);
+          wrapper.appendChild(document.createTextNode(' hours'));
+        }
+        hoursInputsDiv.appendChild(wrapper);
+      });
+      updateWeekWorkloadWarning();
+    }
+
+    function sumWeekHours(weekDaysArr) {
+      const holidays = getBWHolidays(
+        weekDaysArr.find(d => d)?.getFullYear() || (new Date()).getFullYear()
+      );
+      let total = 0;
+      weekDaysArr.forEach(dateObj => {
+        if (!dateObj) return;
+        const weekday = dateObj.getDay();
+        const dateKey = dateObj.toISOString().slice(0, 10);
+        const isHoliday = holidays.includes(dateKey);
+        if (weekday === 0 || weekday === 6 || isHoliday) return;
+        const inp = document.getElementById('hours-' + dateKey);
+        let val = inp ? inp.value : '';
+        val = val === "" || val === undefined ? 0 : parseFloat(val);
+        if (!isNaN(val)) total += val;
+      });
+      return total;
+    }
+
+    function updateWeekWorkloadWarning() {
+      const total = sumWeekHours(currentWeekDays);
+      if (total > 40) {
+        weekAlertWarning.style.display = "flex";
+      } else {
+        weekAlertWarning.style.display = "none";
+      }
+    }
+
+    function openModal(weekLabel, weekKey, weekDaysArr) {
+      modalTitle.textContent = weekLabel;
+      currentWeekKey = weekKey;
+      currentWeekDays = weekDaysArr;
+      const weekData = getReport(weekKey);
+      reportInput.value = weekData.report || '';
+      savedMsg.style.display = "none";
+      renderHoursInputs(weekDaysArr, weekData.hours || {});
+      modal.classList.add('open');
+      lastFocusedElement = document.activeElement;
+      reportInput.focus();
+      document.addEventListener('keydown', trapFocusInModal);
+      updateWeekWorkloadWarning();
+    }
+    function closeModal() {
+      modal.classList.remove('open');
+      if (lastFocusedElement) lastFocusedElement.focus();
+      document.removeEventListener('keydown', trapFocusInModal);
+      currentWeekKey = null;
+      currentWeekDays = [];
+    }
+    closeModalBtn.addEventListener('click', closeModal);
+    modal.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeModal();
+      }
+    });
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) {
+        closeModal();
+      }
+    });
+    function trapFocusInModal(e) {
+      if (!modal.classList.contains('open')) return;
+      const focusable = modal.querySelectorAll('button, textarea, input, [tabindex]:not([tabindex="-1"])');
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.key === 'Tab') {
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            last.focus();
+            e.preventDefault();
+          }
+        } else {
+          if (document.activeElement === last) {
+            first.focus();
+            e.preventDefault();
+          }
+        }
+      }
+    }
+    saveReportBtn.addEventListener('click', function() {
+      if (currentWeekKey) {
+        const hours = {};
+        const holidays = getBWHolidays(
+          currentWeekDays.find(d => d)?.getFullYear() || (new Date()).getFullYear()
+        );
+        currentWeekDays.forEach(dateObj => {
+          if (!dateObj) return;
+          const weekday = dateObj.getDay();
+          const dateKey = dateObj.toISOString().slice(0, 10);
+          const isHoliday = holidays.includes(dateKey);
+          if (weekday === 0 || weekday === 6 || isHoliday) return;
+          const inp = document.getElementById('hours-' + dateKey);
+          let val = inp ? inp.value : '';
+          val = val === "" ? "" : Math.max(0, Math.min(10, parseFloat(val)));
+          hours[dateKey] = val;
+        });
+        saveReport(currentWeekKey, reportInput.value, hours);
+        savedMsg.style.display = "block";
+        setTimeout(() => {
+          savedMsg.style.display = "none";
+        }, 1200);
+        renderCalendar(currentMonth, currentYear);
+        updateWeekWorkloadWarning();
+      }
+    });
+
+    const calendarContainer = document.getElementById('calendar-container');
+    const monthSelect = document.getElementById('month-select');
+    const yearSelect = document.getElementById('year-select');
+    const prevMonthBtn = document.getElementById('prev-month');
+    const nextMonthBtn = document.getElementById('next-month');
+    const prevYearBtn = document.getElementById('prev-year');
+    const nextYearBtn = document.getElementById('next-year');
+    const calendarHeading = document.getElementById('calendar-heading');
+
+    const thisYear = new Date().getFullYear();
+    const yearMin = thisYear - 20;
+    const yearMax = thisYear + 20;
+    for (let y = yearMin; y <= yearMax; y++) {
+      const opt = document.createElement('option');
+      opt.value = y;
+      opt.textContent = y;
+      if (y === thisYear) opt.selected = true;
+      yearSelect.appendChild(opt);
+    }
+
+    let currentMonth = new Date().getMonth();
+    let currentYear = thisYear;
+
+    function getWeekKey(year, month, firstDay, lastDay) {
+      const mm = String(month + 1).padStart(2, '0');
+      const d1 = String(firstDay).padStart(2, '0');
+      const d2 = String(lastDay).padStart(2, '0');
+      return `${year}-${mm}-${d1}-${d2}`;
+    }
+    function getDateObj(year, month, day) {
+      return new Date(year, month, day);
+    }
+
+    /**
+     * Only add a pencil at the end of a week if the last non-null day is a Sunday (getDay()===0).
+     */
+    function renderCalendar(month, year) {
+      monthSelect.value = month;
+      yearSelect.value = year;
+      calendarHeading.textContent = `${monthSelect.options[month].text} ${year} Calendar`;
+
+      let table = `<table aria-label="Monthly calendar for ${monthSelect.options[month].text} ${year}">
+        <thead>
+          <tr>
+            <th scope="col">Sun</th>
+            <th scope="col">Mon</th>
+            <th scope="col">Tue</th>
+            <th scope="col">Wed</th>
+            <th scope="col">Thu</th>
+            <th scope="col">Fri</th>
+            <th scope="col">Sat</th>
+            <th scope="col" class="week-action-header"></th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      let day = 1;
+      for (let i = 0; i < 6; i++) {
+        let weekDays = [];
+        table += '<tr>';
+        for (let j = 0; j < 7; j++) {
+          if ((i === 0 && j < firstDay) || day > daysInMonth) {
+            table += `<td></td>`;
+            weekDays.push(null);
+          } else {
+            let isToday = false;
+            const today = new Date();
+            if (day === today.getDate() && month === today.getMonth() && year === today.getFullYear()) {
+              isToday = true;
+            }
+            table += `<td${isToday ? ' class="today"' : ''}>${day}</td>`;
+            weekDays.push(getDateObj(year, month, day));
+            day++;
+          }
+        }
+        // Pencil only if last non-null day is a Sunday
+        const lastDayObj = [...weekDays].reverse().find(d => d !== null);
+        const firstDayObj = weekDays.find(d => d !== null);
+        let addPencil = false;
+        if (lastDayObj && lastDayObj.getDay() === 0) {
+          addPencil = true;
+        }
+        if (addPencil) {
+          const firstDayNum = firstDayObj ? firstDayObj.getDate() : 1;
+          const lastDayNum = lastDayObj ? lastDayObj.getDate() : daysInMonth;
+          const weekKey = getWeekKey(firstDayObj.getFullYear(), firstDayObj.getMonth(), firstDayNum, lastDayNum);
+          const weekLabel = `${monthSelect.options[firstDayObj.getMonth()].text} ${firstDayNum}–${lastDayNum}, ${firstDayObj.getFullYear()}`;
+          table += `<td>
+            <button
+              class="week-pencil-btn"
+              aria-label="Open report book and hours worked for week: ${weekLabel}"
+              data-week-key="${weekKey}"
+              data-week-label="${weekLabel}"
+              data-week-days='${JSON.stringify(weekDays.map(d => d ? d.toISOString() : ""))}'
+              title="Edit Report Book and hours worked for this week"
+              type="button"
+            >
+              <span aria-hidden="true" style="font-size:1.2em;">✏️</span>
+            </button>
+          </td>`;
+        } else {
+          table += `<td></td>`;
+        }
+        table += '</tr>';
+        if (day > daysInMonth) break;
+      }
+      table += '</tbody></table>';
+      calendarContainer.innerHTML = table;
+
+      document.querySelectorAll('.week-pencil-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          const weekDaysArr = JSON.parse(btn.getAttribute('data-week-days')).map(d =>
+            d ? new Date(d) : null
+          );
+          openModal(
+            btn.getAttribute('data-week-label'),
+            btn.getAttribute('data-week-key'),
+            weekDaysArr
+          );
+        });
+        btn.addEventListener('keydown', function(e) {
+          if ((e.key === 'Enter' || e.key === ' ') && !modal.classList.contains('open')) {
+            e.preventDefault();
+            const weekDaysArr = JSON.parse(btn.getAttribute('data-week-days')).map(d =>
+              d ? new Date(d) : null
+            );
+            openModal(
+              btn.getAttribute('data-week-label'),
+              btn.getAttribute('data-week-key'),
+              weekDaysArr
+            );
+          }
+        });
+      });
+    }
+
+    monthSelect.addEventListener('change', function() {
+      currentMonth = parseInt(this.value, 10);
+      renderCalendar(currentMonth, currentYear);
+    });
+    yearSelect.addEventListener('change', function() {
+      currentYear = parseInt(this.value, 10);
+      renderCalendar(currentMonth, currentYear);
+    });
+    prevMonthBtn.addEventListener('click', function() {
+      if (currentMonth === 0) {
+        if (currentYear > yearMin) {
+          currentMonth = 11;
+          currentYear--;
+        }
+      } else {
+        currentMonth--;
+      }
+      renderCalendar(currentMonth, currentYear);
+    });
+    nextMonthBtn.addEventListener('click', function() {
+      if (currentMonth === 11) {
+        if (currentYear < yearMax) {
+          currentMonth = 0;
+          currentYear++;
+        }
+      } else {
+        currentMonth++;
+      }
+      renderCalendar(currentMonth, currentYear);
+    });
+    prevYearBtn.addEventListener('click', function() {
+      if (currentYear > yearMin) {
+        currentYear--;
+        renderCalendar(currentMonth, currentYear);
+      }
+    });
+    nextYearBtn.addEventListener('click', function() {
+      if (currentYear < yearMax) {
+        currentYear++;
+        renderCalendar(currentMonth, currentYear);
+      }
+    });
+    calendarContainer.addEventListener('keydown', function(e) {
+      if (e.target.classList.contains('week-pencil-btn')) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          prevMonthBtn.focus();
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          nextMonthBtn.focus();
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          prevYearBtn.focus();
+        }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          nextYearBtn.focus();
+        }
+      }
+    });
+
+    renderCalendar(currentMonth, currentYear);
+
+    let touchStartX = null;
+    calendarContainer.addEventListener('touchstart', function(e) {
+      if (e.touches.length === 1) touchStartX = e.touches[0].clientX;
+    });
+    calendarContainer.addEventListener('touchend', function(e) {
+      if (touchStartX === null) return;
+      let touchEndX = e.changedTouches[0].clientX;
+      let dx = touchEndX - touchStartX;
+      if (Math.abs(dx) > 40) {
+        if (dx > 0) {
+          prevMonthBtn.click();
+        } else {
+          nextMonthBtn.click();
+        }
+      }
+      touchStartX = null;
+    });
+  </script>
+</body>
+</html>
